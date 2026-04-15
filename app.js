@@ -16,8 +16,6 @@ const middleware = line.middleware({
   channelSecret: process.env.CHANNEL_SECRET,
 });
 
-app.use(middleware);
-
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const GEMINI_TRANSLATION_SYSTEM_PROMPT = `
 你是一個專業的中越雙向翻譯助理。
@@ -56,6 +54,31 @@ function parseGeminiJson(text) {
     targetLanguage: parsed.targetLanguage === 'vi' ? 'vi' : 'zh',
     translation: parsed.translation,
   };
+}
+
+function parseForcedDirection(rawText) {
+  const text = rawText.trim();
+
+  const zhToViPrefix = /^(中翻越|中文翻越文|zh2vi|zh->vi)\s*/i;
+  const viToZhPrefix = /^(越翻中|越文翻中文|vi2zh|vi->zh)\s*/i;
+
+  if (zhToViPrefix.test(text)) {
+    return {
+      sourceLanguage: 'zh',
+      targetLanguage: 'vi',
+      cleanText: text.replace(zhToViPrefix, '').trim(),
+    };
+  }
+
+  if (viToZhPrefix.test(text)) {
+    return {
+      sourceLanguage: 'vi',
+      targetLanguage: 'zh',
+      cleanText: text.replace(viToZhPrefix, '').trim(),
+    };
+  }
+
+  return null;
 }
 
 async function translateWithGemini(text) {
@@ -145,26 +168,44 @@ function detectLanguage(text) {
 
 // 處理訊息
 async function handleMessage(event) {
-  const userMessage = event.message.text;
+  const userMessage = event.message.text || '';
+  const sourceType = event.source?.type || 'user';
+  const forced = parseForcedDirection(userMessage);
+  const messageText = forced ? forced.cleanText : userMessage;
+
+  if (!messageText.trim()) {
+    await client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '請輸入要翻譯的內容。',
+    });
+    return;
+  }
   
   try {
-    let sourceLanguage = detectLanguage(userMessage);
-    let targetLanguage = sourceLanguage === 'vi' ? 'zh' : 'vi';
+    let sourceLanguage = forced ? forced.sourceLanguage : detectLanguage(messageText);
+    let targetLanguage = forced ? forced.targetLanguage : (sourceLanguage === 'vi' ? 'zh' : 'vi');
     let translatedText = '';
 
     try {
-      const geminiResult = await translateWithGemini(userMessage);
-      sourceLanguage = geminiResult.sourceLanguage;
-      targetLanguage = geminiResult.targetLanguage;
-      translatedText = geminiResult.translation;
+      if (forced) {
+        translatedText = await translateText(messageText, sourceLanguage, targetLanguage);
+      } else {
+        const geminiResult = await translateWithGemini(messageText);
+        sourceLanguage = geminiResult.sourceLanguage;
+        targetLanguage = geminiResult.targetLanguage;
+        translatedText = geminiResult.translation;
+      }
     } catch (geminiError) {
       console.error('Gemini translate error:', geminiError.message || geminiError);
-      translatedText = await translateText(userMessage, sourceLanguage, targetLanguage);
+      translatedText = await translateText(messageText, sourceLanguage, targetLanguage);
     }
+
+    const directionLabel = sourceLanguage === 'vi' ? '越南文→中文' : '中文→越南文';
+    const contextLabel = sourceType === 'group' ? '（群組即時翻譯）' : '';
     
     const replyMessage = {
       type: 'text',
-      text: `📝 ${sourceLanguage === 'vi' ? '越南文→中文' : '中文→越南文'}\n\n原文：${userMessage}\n\n翻譯：${translatedText}`
+      text: `📝 ${directionLabel}${contextLabel}\n\n原文：${messageText}\n\n翻譯：${translatedText}`
     };
     
     await client.replyMessage(event.replyToken, replyMessage);
@@ -177,13 +218,29 @@ async function handleMessage(event) {
   }
 }
 
+async function handleJoin(event) {
+  const sourceType = event.source?.type || '聊天室';
+  const sourceName = sourceType === 'group' ? '群組' : '聊天室';
+  const message = {
+    type: 'text',
+    text: `大家好，我是翻譯小幫手，已加入${sourceName}。\n\n我會自動把中文與越南文雙向翻譯。\n\n可用指令：\n- 中翻越 你的內容\n- 越翻中 你的內容`,
+  };
+  return client.replyMessage(event.replyToken, message);
+}
+
 // 處理所有事件
-app.post('/callback', (req, res) => {
-  Promise.all(req.body.events.map(event => {
+app.post('/callback', middleware, (req, res) => {
+  const tasks = req.body.events.map(event => {
     if (event.type === 'message' && event.message.type === 'text') {
       return handleMessage(event);
     }
-  }))
+    if (event.type === 'join') {
+      return handleJoin(event);
+    }
+    return Promise.resolve(null);
+  });
+
+  Promise.all(tasks)
     .then(() => res.json({ ok: true }))
     .catch(err => {
       console.error(err);

@@ -99,6 +99,13 @@ npm run dev
 4. **官方帳號功能**
    - 確保已啟用「Messaging API」
 
+5. **群組使用設定（重要）**
+   - 在 LINE Developers 的 Messaging API 設定中，開啟「Allow bot to join group chats」
+   - 在 LINE Official Account Manager 中：
+     - 開啟 Webhook
+     - 關閉「自動回應訊息」
+   - 將 Bot 邀請進 LINE 群組後，即可在群組即時翻譯
+
 ---
 
 ## 💬 使用方式
@@ -106,6 +113,13 @@ npm run dev
 1. 在 LINE 上加入你的 Bot
 2. 傳送任何中文或越南文訊息
 3. Bot 自動翻譯並回覆
+
+### 群組即時翻譯
+
+- 直接在群組輸入中文或越南文，Bot 會自動雙向翻譯。
+- 可用強制翻譯指令：
+   - `中翻越 你的句子`
+   - `越翻中 你的句子`
 
 ### 範例：
 ```
