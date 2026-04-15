@@ -3,6 +3,8 @@
 ## 📱 功能介紹
 - ✅ **實時翻譯**：越南文 ↔ 中文 雙向翻譯
 - ✅ **自動偵測**：自動識別輸入語言
+- ✅ **口語與錯字容錯**：使用 Gemini 提升非正式句子的翻譯自然度
+- ✅ **雙引擎備援**：Gemini 失敗時自動切到備援翻譯流程
 - ✅ **簡單易用**：只需傳送訊息即自動翻譯
 - ✅ **適合外勞**：幫助外國勞工與台灣人溝通
 
@@ -65,6 +67,8 @@ npm run dev
    - 在 Zeabur 專案設定中新增環境變數：
      - `CHANNEL_ACCESS_TOKEN`
      - `CHANNEL_SECRET`
+   - `GEMINI_API_KEY`
+   - `GEMINI_MODEL`（可選，建議 `gemini-2.5-flash`）
 
 4. **取得公開 URL**：
    - Zeabur 會提供一個公開 URL（如 `https://your-app.zeabur.app`）
@@ -118,6 +122,14 @@ Bot：📝 越南文→中文
 
 ---
 
+## 🧠 翻譯引擎策略
+
+1. 主要引擎：Gemini（`gemini-2.5-flash`）
+2. 主要用途：處理口語、錯字、文法不完整句子
+3. 備援機制：Gemini 失敗時，自動改用備援翻譯流程
+
+---
+
 ## 🛠️ 本地開發與測試
 
 ### 使用 ngrok 進行本地測試
@@ -139,11 +151,16 @@ ngrok http 3000
 ## 📁 專案結構
 ```
 vietnamese-translator-linebot/
-├── app.js              # 主程式
-├── package.json        # 相依套件
-├── .env.example        # 環境變數範本
-├── .env                # 環境變數（本地使用，不上傳）
-└── README.md           # 說明文件
+├── app.js                 # 主程式（LINE Bot + 翻譯邏輯）
+├── package.json           # 相依套件與 scripts
+├── package-lock.json      # 套件鎖定檔
+├── Dockerfile             # 容器部署設定
+├── .env.example           # 環境變數範本
+├── .env                   # 環境變數（本地使用，不上傳）
+├── README.md              # 專案說明
+├── DEPLOYMENT_GUIDE.md    # 詳細部署指南
+├── QUICKSTART.md          # 快速啟動
+└── QUICK_REFERENCE.md     # 速查卡
 ```
 
 ---
@@ -155,7 +172,8 @@ vietnamese-translator-linebot/
 | Bot 無法回覆訊息 | 檢查 CHANNEL_ACCESS_TOKEN 和 CHANNEL_SECRET 是否正確 |
 | Webhook 顯示 failed | 確認 URL 正確且伺服器已啟動 |
 | Node modules 相關錯誤 | 執行 `npm install` 重新安裝 |
-| 翻譯結果不準確 | 翻譯 API 有限制，複雜文句準確度有限 |
+| Gemini 沒生效 | 檢查是否已設定 `GEMINI_API_KEY` |
+| 翻譯結果不自然 | 確認 `GEMINI_MODEL=gemini-2.5-flash`，並用完整句子測試 |
 
 ---
 
