@@ -34,8 +34,14 @@ copy .env.example .env
 ```
 CHANNEL_ACCESS_TOKEN=你的_CHANNEL_ACCESS_TOKEN
 CHANNEL_SECRET=你的_CHANNEL_SECRET
+GEMINI_API_KEY=你的_GEMINI_API_KEY
+GEMINI_MODEL=gemini-2.5-flash
 PORT=3000
 ```
+
+說明：
+- `GEMINI_API_KEY`：用於啟用 Gemini 作為主要翻譯引擎（建議填寫）
+- `GEMINI_MODEL`：可選，預設 `gemini-2.5-flash`
 
 #### 本地測試
 ```bash

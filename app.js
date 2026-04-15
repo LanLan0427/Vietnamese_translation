@@ -2,6 +2,7 @@ const express = require('express');
 const line = require('@line/bot-sdk');
 const axios = require('axios');
 const translate = require('google-translate-api-x');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
 const app = express();
@@ -16,6 +17,57 @@ const middleware = line.middleware({
 });
 
 app.use(middleware);
+
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const GEMINI_TRANSLATION_SYSTEM_PROMPT = `
+你是一個專業的中越雙向翻譯助理。
+
+任務規則：
+1. 先判斷輸入主要語言：中文或越南文。
+2. 若主要語言是中文，翻譯成自然、口語化的越南文。
+3. 若主要語言是越南文，翻譯成自然、口語化的繁體中文。
+4. 輸入可能有錯字、文法不通或非正式用語，請在理解語意後翻譯，不要逐字硬譯。
+5. 保留人名、地名、品牌名、電話、網址、數字與金額。
+6. 不要解釋，不要加註解，只輸出 JSON。
+
+輸出格式（嚴格遵守）：
+{"sourceLanguage":"zh|vi","targetLanguage":"vi|zh","translation":"..."}
+`;
+
+let geminiModel = null;
+if (process.env.GEMINI_API_KEY) {
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  geminiModel = genAI.getGenerativeModel({
+    model: GEMINI_MODEL,
+    systemInstruction: GEMINI_TRANSLATION_SYSTEM_PROMPT,
+  });
+}
+
+function parseGeminiJson(text) {
+  const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/^```/, '').replace(/```$/, '').trim();
+  const parsed = JSON.parse(cleaned);
+
+  if (!parsed.translation || typeof parsed.translation !== 'string') {
+    throw new Error('Invalid Gemini response: missing translation');
+  }
+
+  return {
+    sourceLanguage: parsed.sourceLanguage === 'vi' ? 'vi' : 'zh',
+    targetLanguage: parsed.targetLanguage === 'vi' ? 'vi' : 'zh',
+    translation: parsed.translation,
+  };
+}
+
+async function translateWithGemini(text) {
+  if (!geminiModel) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
+
+  const prompt = `請翻譯以下句子：\n${text}`;
+  const result = await geminiModel.generateContent(prompt);
+  const output = result.response.text();
+  return parseGeminiJson(output);
+}
 
 // 主要翻譯引擎：google-translate-api-x
 async function translateWithGoogle(text, targetLanguage) {
@@ -94,11 +146,21 @@ function detectLanguage(text) {
 // 處理訊息
 async function handleMessage(event) {
   const userMessage = event.message.text;
-  const sourceLanguage = detectLanguage(userMessage);
-  const targetLanguage = sourceLanguage === 'vi' ? 'zh' : 'vi';
   
   try {
-    const translatedText = await translateText(userMessage, sourceLanguage, targetLanguage);
+    let sourceLanguage = detectLanguage(userMessage);
+    let targetLanguage = sourceLanguage === 'vi' ? 'zh' : 'vi';
+    let translatedText = '';
+
+    try {
+      const geminiResult = await translateWithGemini(userMessage);
+      sourceLanguage = geminiResult.sourceLanguage;
+      targetLanguage = geminiResult.targetLanguage;
+      translatedText = geminiResult.translation;
+    } catch (geminiError) {
+      console.error('Gemini translate error:', geminiError.message || geminiError);
+      translatedText = await translateText(userMessage, sourceLanguage, targetLanguage);
+    }
     
     const replyMessage = {
       type: 'text',
